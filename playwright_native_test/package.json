@@ -5,7 +5,10 @@
   "description": "Playwright-based end-to-end tests across Chromium, WebKit, and Firefox.",
   "type": "module",
   "scripts": {
-    "install": "npm ci || npm install",
+    "clean:modules": "rimraf node_modules",
+    "clean:lock": "rimraf package-lock.json",
+    "preinstall": "node -e \"try{require('fs').rmSync('node_modules',{recursive:true,force:true})}catch(e){}\"",
+    "postinstall": "npx playwright install --with-deps",
     "build": "echo \"No build step\"",
     "start": "node scripts/start.js || echo \"No start step\"",
     "test": "npx playwright test",
