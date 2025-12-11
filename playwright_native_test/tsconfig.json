@@ -7,7 +7,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node", "@types/node", "@playwright/test"]
+    "types": ["node"]
   },
   "include": ["**/*.ts"]
 }
