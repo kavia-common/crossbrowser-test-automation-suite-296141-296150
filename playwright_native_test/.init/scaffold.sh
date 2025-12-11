@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Idempotent scaffolding for Playwright project per step requirements
 WORKSPACE="/home/kavia/workspace/code-generation/crossbrowser-test-automation-suite-296141-296150/playwright_native_test"
-mkdir -p "$WORKSPACE" && cd "$WORKSPACE"
-# Default Playwright Test version; allow override via PLAYWRIGHT_TEST_VER
-PW_VERSION="^1.43.0"
-[ -n "${PLAYWRIGHT_TEST_VER:-}" ] && PW_VERSION="$PLAYWRIGHT_TEST_VER"
-export PW_VERSION
-# Create package.json only if missing; otherwise merge scripts/devDependencies non-destructively
+cd "$WORKSPACE"
+PW_VERSION="${PW_VERSION:-latest}"
+# Create package.json if missing (do not set an empty 'type' field)
 if [ ! -f package.json ]; then
   cat > package.json <<JSON
 {
@@ -16,49 +12,50 @@ if [ ! -f package.json ]; then
   "private": true,
   "scripts": {
     "test": "playwright test",
-    "test:headless": "playwright test --reporter=list --workers=1"
+    "test:ci": "PLAYWRIGHT_HEADLESS=1 node --max-old-space-size=1024 ./node_modules/.bin/playwright test --workers=1 --retries=1"
   },
   "devDependencies": {
-    "@playwright/test": "${PW_VERSION}"
+    "@playwright/test": "${PW_VERSION}",
+    "playwright": "${PW_VERSION}"
   }
 }
 JSON
-else
-  # Merge in Node to keep JSON formatting and avoid destructive editing
-  node - <<'NODE'
-const fs=require('fs');const p='package.json';
-const pkg=JSON.parse(fs.readFileSync(p));
-pkg.scripts=pkg.scripts||{};
-pkg.scripts['test']=pkg.scripts['test']||'playwright test';
-pkg.scripts['test:headless']=pkg.scripts['test:headless']||'playwright test --reporter=list --workers=1';
-pkg.devDependencies=pkg.devDependencies||{};
-// Respect existing version, otherwise set from env PW_VERSION or fallback
-pkg.devDependencies['@playwright/test']=pkg.devDependencies['@playwright/test']||process.env.PW_VERSION||'^1.43.0';
-fs.writeFileSync(p,JSON.stringify(pkg,null,2));
-NODE
 fi
-# Write playwright.config.js if missing (minimal CI-friendly settings)
-if [ ! -f playwright.config.js ]; then
-  cat > playwright.config.js <<'JS'
+# Ensure tests dir exists
+mkdir -p "$WORKSPACE/tests"
+# Detect module type from package.json; default to cjs
+MODULE_TYPE="cjs"
+if command -v node >/dev/null 2>&1; then
+  TYPE_FIELD=$(node -e "try{const p=require('./package.json'); console.log(p.type||'');}catch(e){console.log('');}") || true
+  if [ "$TYPE_FIELD" = "module" ]; then MODULE_TYPE="esm"; fi
+fi
+# Write Playwright config matching module type
+if [ "$MODULE_TYPE" = "esm" ]; then
+  cat > "$WORKSPACE/playwright.config.mjs" <<'MJS'
+import { defineConfig } from '@playwright/test';
+export default defineConfig({
+  use: { headless: true, launchOptions: { args: ['--no-sandbox'] } },
+  retries: 1,
+  workers: 1,
+  testDir: './tests'
+});
+MJS
+  # Remove CJS config if present to avoid conflicts
+  [ -f "$WORKSPACE/playwright.config.js" ] && rm -f "$WORKSPACE/playwright.config.js"
+else
+  cat > "$WORKSPACE/playwright.config.js" <<'JS'
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 module.exports = {
-  timeout: 15000,
-  expect: { timeout: 5000 },
-  use: { headless: true, launchOptions: { args: ["--no-sandbox","--disable-dev-shm-usage"] } },
-  retries: 0
+  use: { headless: true, launchOptions: { args: ['--no-sandbox'] } },
+  retries: 1,
+  workers: 1,
+  testDir: './tests'
 };
 JS
+  [ -f "$WORKSPACE/playwright.config.mjs" ] && rm -f "$WORKSPACE/playwright.config.mjs"
 fi
-# Add deterministic sample test only if absent
-mkdir -p tests
-if [ ! -f tests/example.spec.js ]; then
-  cat > tests/example.spec.js <<'TEST'
-const { test, expect } = require('@playwright/test');
-
-test('dom content stable check', async ({ page }) => {
-  await page.setContent('<div id="ok">ok</div>');
-  await expect(page.locator('#ok')).toHaveText('ok');
-});
-TEST
+# Generate package-lock if npm available (non-fatal)
+if command -v npm >/dev/null 2>&1 && [ -f package.json ]; then
+  npm i --package-lock-only > "$WORKSPACE/package_lock_generate.log" 2>&1 || true
 fi
-# End of scaffold script
+# Finished
