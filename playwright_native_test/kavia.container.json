@@ -1,0 +1,12 @@
+{
+  "name": "playwright_native_test",
+  "type": "node",
+  "commands": {
+    "install": "npm install",
+    "build": "npm run build",
+    "start": "npm run start",
+    "test": "npm test",
+    "lint": "npm run lint"
+  },
+  "env": {}
+}
